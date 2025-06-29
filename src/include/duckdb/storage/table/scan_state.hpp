@@ -19,6 +19,8 @@
 #include "duckdb/parser/parsed_data/sample_options.hpp"
 #include "duckdb/storage/storage_index.hpp"
 #include "duckdb/planner/table_filter_state.hpp"
+#include <iostream>
+#include <unordered_map>
 
 namespace duckdb {
 class AdaptiveFilter;
@@ -135,6 +137,10 @@ struct ScanFilter {
 	bool IsAlwaysTrue() const {
 		return always_true;
 	}
+
+	std::string GetFingerprint() const {
+		return filter.ToString(std::to_string(table_column_index));
+	}
 };
 
 class ScanFilterInfo {
@@ -178,6 +184,14 @@ private:
 	idx_t always_true_filters = 0;
 };
 
+struct BitmapCacheBuilder {
+	Bitmap bitmap;
+	atomic<bool> complete {false};
+	BitmapCacheBuilder() = default;
+	inline void Add(row_t rid) { bitmap.set(rid); }
+	void Finalise(const string &table, const string &predicate_key);
+};
+
 class CollectionScanState {
 public:
 	explicit CollectionScanState(TableScanState &parent_p);
@@ -198,6 +212,9 @@ public:
 	idx_t batch_index;
 	//! The valid selection
 	SelectionVector valid_sel;
+
+    // const Bitmap *bitmap = nullptr;
+    // BitmapCacheBuilder *bitmap_builder = nullptr;
 
 	RandomEngine random;
 
