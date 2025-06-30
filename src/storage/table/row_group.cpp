@@ -615,30 +615,35 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 			/* ---------- bitmap pruning (optional) ---------------------------- */
 			// lookup cache entry
 			auto &table_filters = filter_info.GetFilterList();
-			std::string table_name = ""; // FIXME !!!
+			std::string table_name = GetTableInfo().GetTableName(); // FIXME !!!
 			std::string filters_fingerprint = get_filters_fingerprint(table_filters);
 			const Bitmap* cached_bitmap = transaction.transaction->transaction_manager.predicateCache.Get(
 				table_name, filters_fingerprint, this->start + current_row
 			);
 
-			std::string rows = "";
-			if (cached_bitmap != nullptr) {
+			std::string original_rows = "";
+			for (size_t sel_idx = 0; sel_idx < count; sel_idx++) {
+				original_rows += std::to_string(sel.get_index(sel_idx)) + " ";
+			}
+			std::cout << "Original rows : " << GetTableInfo().GetTableName() << " "
+			          << original_rows << std::endl;
+			if (cached_bitmap) {
+#ifdef DEBUG
 				std::cout << "Cache hit !!!" << std::endl;
-				idx_t new_cnt = 0;
-				for (idx_t k = 0; k < approved_tuple_count; k++) {
-					const auto rid = sel.get_index(k);
-					// Conversion to global rids :: rows += " " + std::to_string(this->start + current_row + rid);
-					if (cached_bitmap->get(rid)) {
-						sel.set_index(new_cnt++, rid);
-					}
+#endif
+				approved_tuple_count = cached_bitmap->rids.size();
+				if (true) {
+					std::cout << (this->start + current_row) << " " << approved_tuple_count << " " << GetTableInfo().GetTableName() << std::endl;
 				}
-				// {
-				// 	std::lock_guard<std::mutex> lock(transaction.transaction->transaction_manager.predicateCacheMutex);
-				// 	std::cout << rows << std::endl << std::endl;
-				// }
-				approved_tuple_count = new_cnt;
+				// sel.sel_vector = const_cast<uint32_t*>(cached_bitmap->rids.data()); // CAREFUL: This might cause issues!
+				std::string rows = "";
+				for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
+					sel.set_index(sel_idx, cached_bitmap->rids[sel_idx]);
+					rows += std::to_string(cached_bitmap->rids[sel_idx]) + " ";
+				}
+				std::cout << "Cached rows : " << GetTableInfo().GetTableName() << " " << filters_fingerprint << " " << rows << std::endl;
 
-				if (approved_tuple_count == 0) {
+				if (approved_tuple_count == 0) { // TODO: Make sure even fully pruned data chunks' bitmaps are cached
 					/* no surviving rows – skip the vector altogether */
 					result.Reset();
 					for (idx_t i = 0; i < column_ids.size(); i++) {
@@ -651,13 +656,21 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 					state.vector_index++;
 					continue;
 				}
+
+				// TODO: What is this for?
+				for (auto &table_filter : filter_info.GetFilterList()) {
+					if (table_filter.IsAlwaysTrue()) {
+						continue;
+					}
+					result.data[table_filter.scan_column_index].Slice(sel, approved_tuple_count);
+				}
 			}
 
 			//! first, we scan the columns with filters, fetch their data and generate a selection vector.
 			//! get runtime statistics
 			auto adaptive_filter = filter_info.GetAdaptiveFilter();
 			auto filter_state = filter_info.BeginFilter();
-			if (has_filters) {
+			if (has_filters && !cached_bitmap) {
 				D_ASSERT(ALLOW_UPDATES);
 				auto &filter_list = filter_info.GetFilterList();
 				for (idx_t i = 0; i < filter_list.size(); i++) {
@@ -719,16 +732,26 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				}
 				// Now that we have evaluated the filters, we cache the bitmap index
 				std::string filters_fingerprint = get_filters_fingerprint(filter_list);
-				std::string table_name = ""; // FIXME
+				std::string table_name = GetTableInfo().GetTableName(); // FIXME
 				Bitmap bitmap;
+				std::string rows = "";
 				for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
 					const auto rid = sel.get_index(sel_idx);
 					bitmap.set(rid);
+					rows += std::to_string(rid) + " ";
 				}
+				bitmap.finalize();
+				if (true) {
+					std::cout << "Caching bitmap for " << GetTableInfo().GetTableName() << " "
+					          << filters_fingerprint << " " << approved_tuple_count << std::endl;
+				}
+				std::cout << "Cached rows : " << GetTableInfo().GetTableName() << " " << rows << std::endl;
 				transaction.transaction->transaction_manager.predicateCache.Add(
 					table_name, filters_fingerprint, this->start + current_row, bitmap
 				);
+#ifdef DEBUG
 				std::cout << "Insert cache entry" << std::endl;
+#endif
 			}
 			if (approved_tuple_count == 0) {
 				// all rows were filtered out by the table filters

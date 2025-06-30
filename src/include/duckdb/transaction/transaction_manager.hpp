@@ -17,6 +17,7 @@
 #include <iostream>
 #include <vector>
 #include <unordered_map>
+#include <cstddef>
 
 namespace duckdb {
 
@@ -28,63 +29,34 @@ class DatabaseInstance;
 class Transaction;
 
 class Bitmap {
-    std::vector<uint64_t> data;
+    std::vector<unsigned char> data;
+	bool finalized = false;
 
 public:
-    Bitmap() = default;
+	std::vector<uint32_t> rids;
+
+    Bitmap() : data(2048, 0) {};
 
     // Set bit at given index, auto-growing if needed
     void set(size_t index) {
-        size_t required_size = (index / 64) + 1;
-        if (data.size() < required_size) {
-            data.resize(required_size, 0);
+        if (data.size() <= index) {
+            data.resize(std::max(index + 1, data.size() * 2), 0);
         }
-        data[index / 64] |= (uint64_t(1) << (index % 64));
+		if (finalized) {
+			throw std::runtime_error("Cannot override bitmap after finalization");
+		}
+        data[index] = 1;
     }
 
-    // Check if bit is set
-    bool get(size_t index) const {
-        size_t block = index / 64;
-        if (block >= data.size()) {
-            return false;
-        }
-        return (data[block] >> (index % 64)) & 1;
-    }
-
-    // Combine this bitmap with another via bitwise AND
-    void intersect(const Bitmap& other) {
-        size_t min_size = std::min(data.size(), other.data.size());
-        for (size_t i = 0; i < min_size; ++i) {
-            data[i] &= other.data[i];
-        }
-        // Zero out excess bits if this bitmap is larger
-        for (size_t i = min_size; i < data.size(); ++i) {
-            data[i] = 0;
-        }
-    }
-
-	void add(const Bitmap &other) {
-        size_t max_size = std::max(data.size(), other.data.size());
-		size_t min_size = std::min(data.size(), other.data.size());
-        for (size_t i = 0; i < min_size; ++i) {
-            data[i] |= other.data[i];
-        }
-		if (data.size() < max_size) {
-			data.resize(max_size, 0);
-			for (size_t i = min_size; i < data.size(); ++i) {
-				data[i] |= other.data[i];
+	void finalize() {
+		// Find the indexes of the bits that are set to 1 and put them in rids
+		for (size_t i = 0; i < data.size(); ++i) {
+			if (data[i]) {
+				rids.push_back(i);
 			}
 		}
-    }
-
-    // Print bitmap (for debugging, prints in reverse for clarity)
-    void print(size_t max_bits = 0) const {
-        size_t total_bits = max_bits ? max_bits : data.size() * 64;
-        for (size_t i = 0; i < total_bits; ++i) {
-            std::cout << get(i);
-        }
-        std::cout << std::endl;
-    }
+		finalized = true;
+	}
 };
 
 class PredicateCache {
@@ -93,7 +65,14 @@ public:
 
 	void Add(const std::string &table_name, const std::string &filter_fingerprint, const unsigned long offset, const Bitmap &bitmap) {
 		predicateCacheMutex.lock();
+		if (true) {
+			std::cout << "PredicateCache::Add called with table_name: " << table_name
+			<< ", filter_fingerprint: " << filter_fingerprint
+			<< ", bitmap size: " << bitmap.rids.size()
+			<< ", offset: " << offset << std::endl;
+		}
 		internalCache[table_name][filter_fingerprint][offset] = bitmap;
+		predicateCacheMutex.unlock();
 	}
 
 	// Get a bitmap from the cache by key
