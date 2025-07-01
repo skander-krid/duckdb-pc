@@ -633,12 +633,9 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 			DumpSelVector(sel, approved_tuple_count, "Before bitmap pruning (approved count)");
 			if (cached_bitmap) {
 				approved_tuple_count = cached_bitmap->rids.size();
-				if (true) {
-					std::cout << (this->start + current_row) << " " << approved_tuple_count << " " << GetTableInfo().GetTableName() << std::endl;
-				}
 				sel.sel_vector = const_cast<uint32_t*>(cached_bitmap->rids.data()); // CAREFUL: This might cause issues!
-				// for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
-				// 	sel.set_index(sel_idx, sel_idx);
+				// for (idx_t i = 0; i < approved_tuple_count; i++) {
+					// sel.set_index(i, i);
 				// }
 				DumpSelVector(sel, approved_tuple_count, "After bitmap pruning");
 
@@ -656,13 +653,24 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 					continue;
 				}
 
-				// TODO: What is this for?
-				for (auto &table_filter : filter_info.GetFilterList()) {
-					if (table_filter.IsAlwaysTrue()) {
-						continue;
-					}
-					result.data[table_filter.scan_column_index].Slice(sel, approved_tuple_count);
-				}
+				// for (idx_t i = 0; i < table_filters.size(); i++) {
+				// 	auto &result_vector = result.data[table_filters[i].scan_column_index];
+				// 	D_ASSERT(result_vector.GetType().InternalType() == ROW_TYPE);
+				// 	result_vector.SetVectorType(VectorType::FLAT_VECTOR);
+				// 	auto result_data = FlatVector::GetData<int64_t>(result_vector);
+				// 	for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
+				// 		result_data[sel.get_index(sel_idx)] =
+				// 			UnsafeNumericCast<int64_t>(this->start + current_row + sel.get_index(sel_idx));
+				// 	}
+				// }
+
+				// // TODO: What is this for?
+				// for (auto &table_filter : filter_info.GetFilterList()) {
+				// 	if (table_filter.IsAlwaysTrue()) {
+				// 		continue;
+				// 	}
+				// 	result.data[table_filter.scan_column_index].Slice(sel, approved_tuple_count);
+				// }
 			}
 
 			//! first, we scan the columns with filters, fetch their data and generate a selection vector.

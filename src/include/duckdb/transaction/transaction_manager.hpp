@@ -65,12 +65,6 @@ public:
 
 	void Add(const std::string &table_name, const std::string &filter_fingerprint, const unsigned long offset, const Bitmap &bitmap) {
 		predicateCacheMutex.lock();
-		if (true) {
-			std::cout << "PredicateCache::Add called with table_name: " << table_name
-			<< ", filter_fingerprint: " << filter_fingerprint
-			<< ", bitmap size: " << bitmap.rids.size()
-			<< ", offset: " << offset << std::endl;
-		}
 		internalCache[table_name][filter_fingerprint][offset] = bitmap;
 		predicateCacheMutex.unlock();
 	}
