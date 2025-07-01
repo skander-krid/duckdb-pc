@@ -511,11 +511,13 @@ std::string get_filters_fingerprint(const duckdb::vector<duckdb::ScanFilter> &ta
 }
 
 void DumpSelVector(const SelectionVector &sel, idx_t count, std::string prefix) {
+#ifdef DUCKDB_DEBUG
 	std::string rows = "";
 	for (idx_t sel_idx = 0; sel_idx < count; sel_idx++) {
 		rows += std::to_string(sel.get_index(sel_idx)) + " ";
 	}
 	std::cout << "Selection Vector " << prefix << " : " << rows << std::endl;
+#endif
 }
 
 template <TableScanType TYPE>
@@ -633,10 +635,7 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 			DumpSelVector(sel, approved_tuple_count, "Before bitmap pruning (approved count)");
 			if (cached_bitmap) {
 				approved_tuple_count = cached_bitmap->rids.size();
-				sel.sel_vector = const_cast<uint32_t*>(cached_bitmap->rids.data()); // CAREFUL: This might cause issues!
-				// for (idx_t i = 0; i < approved_tuple_count; i++) {
-					// sel.set_index(i, i);
-				// }
+				sel.sel_vector = const_cast<uint32_t*>(cached_bitmap->rids.data());
 				DumpSelVector(sel, approved_tuple_count, "After bitmap pruning");
 
 				if (approved_tuple_count == 0) { // TODO: Make sure even fully pruned data chunks' bitmaps are cached
@@ -652,32 +651,13 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 					state.vector_index++;
 					continue;
 				}
-
-				// for (idx_t i = 0; i < table_filters.size(); i++) {
-				// 	auto &result_vector = result.data[table_filters[i].scan_column_index];
-				// 	D_ASSERT(result_vector.GetType().InternalType() == ROW_TYPE);
-				// 	result_vector.SetVectorType(VectorType::FLAT_VECTOR);
-				// 	auto result_data = FlatVector::GetData<int64_t>(result_vector);
-				// 	for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
-				// 		result_data[sel.get_index(sel_idx)] =
-				// 			UnsafeNumericCast<int64_t>(this->start + current_row + sel.get_index(sel_idx));
-				// 	}
-				// }
-
-				// // TODO: What is this for?
-				// for (auto &table_filter : filter_info.GetFilterList()) {
-				// 	if (table_filter.IsAlwaysTrue()) {
-				// 		continue;
-				// 	}
-				// 	result.data[table_filter.scan_column_index].Slice(sel, approved_tuple_count);
-				// }
 			}
 
 			//! first, we scan the columns with filters, fetch their data and generate a selection vector.
 			//! get runtime statistics
 			auto adaptive_filter = filter_info.GetAdaptiveFilter();
 			auto filter_state = filter_info.BeginFilter();
-			if (has_filters) {
+			if (has_filters && !cached_bitmap) {
 				D_ASSERT(ALLOW_UPDATES);
 				auto &filter_list = filter_info.GetFilterList();
 				for (idx_t i = 0; i < filter_list.size(); i++) {
@@ -750,9 +730,6 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				transaction.transaction->transaction_manager.predicateCache.Add(
 					table_name, filters_fingerprint, this->start + current_row, bitmap
 				);
-#ifdef DEBUG
-				std::cout << "Insert cache entry" << std::endl;
-#endif
 			}
 			if (approved_tuple_count == 0) {
 				// all rows were filtered out by the table filters
@@ -775,7 +752,7 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 			}
 			//! Now we use the selection vector to fetch data for the other columns.
 			for (idx_t i = 0; i < column_ids.size(); i++) {
-				if (has_filters && filter_info.ColumnHasFilters(i)) {
+				if (has_filters && !cached_bitmap && filter_info.ColumnHasFilters(i)) {
 					// column has already been scanned as part of the filtering process
 					continue;
 				}
