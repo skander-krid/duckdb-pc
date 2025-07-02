@@ -118,8 +118,9 @@ public:
 	void Verify(idx_t count, idx_t vector_size) const;
 	void Sort(idx_t count);
 
-private:
 	sel_t *sel_vector;
+
+private:
 	buffer_ptr<SelectionData> selection_data;
 };
 

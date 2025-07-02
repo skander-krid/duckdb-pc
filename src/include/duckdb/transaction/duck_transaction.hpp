@@ -91,8 +91,9 @@ public:
 
 	void ModifyTable(DataTable &tbl);
 
-private:
 	DuckTransactionManager &transaction_manager;
+
+private:
 	//! The undo buffer is used to store old versions of rows that are updated
 	//! or deleted
 	UndoBuffer undo_buffer;

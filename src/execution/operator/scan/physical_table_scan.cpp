@@ -4,6 +4,7 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/transaction/transaction.hpp"
+#include <iostream>
 
 #include <utility>
 
@@ -20,6 +21,19 @@ PhysicalTableScan::PhysicalTableScan(PhysicalPlan &physical_plan, vector<Logical
       column_ids(std::move(column_ids_p)), projection_ids(std::move(projection_ids_p)), names(std::move(names_p)),
       table_filters(std::move(table_filters_p)), extra_info(std::move(extra_info)), parameters(std::move(parameters_p)),
       virtual_columns(std::move(virtual_columns_p)) {
+	/* -------- pretty one-liner with table + filters -------------------- */
+	const auto params = ParamsToString();      // already formats filters/projects nicely :contentReference[oaicite:0]{index=0}
+
+	std::string filters;
+	auto f_it = params.find("Filters");
+	if (f_it != params.end() && !f_it->second.empty()) {
+		filters = f_it->second;
+	} else {
+		filters = "<none>";
+	}
+
+	// std::cerr << "[DuckDB][TableScan] " << GetName()           // e.g.  "SEQ_SCAN lineitem"
+	//           << " | filters: " << filters << std::endl;        // e.g.  "l_shipdate >= DATE '1998-09-01'"
 }
 
 class TableScanGlobalSourceState : public GlobalSourceState {
@@ -86,7 +100,7 @@ public:
 
 unique_ptr<LocalSourceState> PhysicalTableScan::GetLocalSourceState(ExecutionContext &context,
                                                                     GlobalSourceState &gstate) const {
-	return make_uniq<TableScanLocalSourceState>(context, gstate.Cast<TableScanGlobalSourceState>(), *this);
+	return make_uniq<TableScanLocalSourceState>(context, gstate.Cast<TableScanGlobalSourceState>(), *this);;
 }
 
 unique_ptr<GlobalSourceState> PhysicalTableScan::GetGlobalSourceState(ClientContext &context) const {
