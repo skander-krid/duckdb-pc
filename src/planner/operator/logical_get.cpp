@@ -10,10 +10,20 @@
 #include "duckdb/common/serializer/serializer.hpp"
 #include "duckdb/common/serializer/deserializer.hpp"
 #include "duckdb/parser/tableref/table_function_ref.hpp"
+#include "duckdb/transaction/transaction_manager.hpp"
 
 namespace duckdb {
 
+std::string get_filters_fingerprint_from_filterset(TableFilterSet& table_function) {
+	std::string filters_fingerprint = "";
+	for (auto it = table_function.filters.begin(); it != table_function.filters.end(); it++) {
+		filters_fingerprint.append(it->second->ToString(std::to_string(it->first)));
+	}
+	return filters_fingerprint;
+}
+
 LogicalGet::LogicalGet() : LogicalOperator(LogicalOperatorType::LOGICAL_GET) {
+	// std::cout << "LogicalGet created with default constructor" << std::endl;
 }
 
 LogicalGet::LogicalGet(idx_t table_index, TableFunction function, unique_ptr<FunctionData> bind_data,
@@ -21,6 +31,7 @@ LogicalGet::LogicalGet(idx_t table_index, TableFunction function, unique_ptr<Fun
     : LogicalOperator(LogicalOperatorType::LOGICAL_GET), table_index(table_index), function(std::move(function)),
       bind_data(std::move(bind_data)), returned_types(std::move(returned_types)), names(std::move(returned_names)),
       extra_info(), rowid_type(std::move(rowid_type)) {
+	// std::cout << "LogicalGet created for table index: " << table_index << std::endl;
 }
 
 optional_ptr<TableCatalogEntry> LogicalGet::GetTable() const {
@@ -153,9 +164,22 @@ void LogicalGet::ResolveTypes() {
 }
 
 idx_t LogicalGet::EstimateCardinality(ClientContext &context) {
+	auto cachedCardinalityEstimation = global_transaction_manager->predicateCache.GetSize(
+		GetTable()->name,
+		get_filters_fingerprint_from_filterset(table_filters));
+	if (cachedCardinalityEstimation) {
+		// If we have a cached cardinality estimation, use it
+		// std::cout << "Returning estimated cardinality for " << GetTable()->name << " : " << cachedCardinalityEstimation.value() << std::endl;
+		return cachedCardinalityEstimation.value();
+	} else {
+		// std::cout << "No cached cardinality estimation for " << GetTable()->name << " and fingerprint " << get_filters_fingerprint_from_filterset(table_filters)
+		//           << std::endl;
+	}
+
 	// join order optimizer does better cardinality estimation.
 	if (has_estimated_cardinality) {
-		return estimated_cardinality;
+		// std::cout << "Returning estimated cardinality: " << estimated_cardinality << " for table " << GetTable()->name << std::endl;
+		// return estimated_cardinality;
 	}
 	if (function.cardinality) {
 		auto node_stats = function.cardinality(context, bind_data.get());

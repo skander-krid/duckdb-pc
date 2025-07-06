@@ -13,6 +13,9 @@
 #include "duckdb/planner/table_filter.hpp"
 #include "duckdb/common/extra_operator_info.hpp"
 
+// Include the transaction manager hpp file
+// #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+
 namespace duckdb {
 class DynamicTableFilterSet;
 

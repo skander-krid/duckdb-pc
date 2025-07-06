@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <cstddef>
 #include <shared_mutex>
+#include <optional>
 
 namespace duckdb {
 
@@ -80,6 +81,29 @@ public:
 		return offIt->second;   // Success
 	}
 
+	const std::optional<size_t> GetSize(const std::string &table_name, const std::string &filter_fingerprint) {
+		std::shared_lock lock(predicateCacheMutex); // Shared read access
+
+		auto tblIt = internalCache.find(table_name);
+		if (tblIt == internalCache.end()) {
+			return std::nullopt;
+		}
+
+		auto fpIt = tblIt->second.find(filter_fingerprint);
+		if (fpIt == tblIt->second.end()) {
+			return std::nullopt;
+		}
+
+		size_t totalSize = 0;
+		for (const auto &offIt : fpIt->second) {
+			if (offIt.second->rids.empty()) {
+				continue; // Skip empty bitmaps
+			}
+			totalSize += offIt.second->rids.size();
+		}
+		return totalSize;
+	}
+
 private:
 	using TableName = std::string;
 	using FilterFingerprint = std::string;
@@ -120,5 +144,7 @@ protected:
 	//! The attached database
 	AttachedDatabase &db;
 };
+
+extern TransactionManager* global_transaction_manager;
 
 } // namespace duckdb

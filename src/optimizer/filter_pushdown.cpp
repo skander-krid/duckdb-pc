@@ -235,6 +235,7 @@ unique_ptr<LogicalOperator> FilterPushdown::AddLogicalFilter(unique_ptr<LogicalO
 	}
 	filter->expressions = std::move(expressions);
 	filter->children.push_back(std::move(op));
+	// std::cout << "Adding filter: " << filter->ToString() << std::endl;
 	return std::move(filter);
 }
 

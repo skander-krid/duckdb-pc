@@ -615,36 +615,44 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 			}
 
 			/* ---------- cached bitmap pruning ---------------------------- */
-			auto &table_filters = filter_info.GetFilterList();
-			std::string table_name = GetTableInfo().GetTableName(); // FIXME !!!
-			std::string filters_fingerprint = get_filters_fingerprint(table_filters);
-			const std::shared_ptr<Bitmap> cached_bitmap = transaction.transaction->transaction_manager.predicateCache.Get(
-				table_name, filters_fingerprint, this->start + current_row
-			);
-
-			DumpSelVector(sel, count, "Before bitmap pruning");
-			DumpSelVector(sel, approved_tuple_count, "Before bitmap pruning (approved count)");
-			if (cached_bitmap) {
-				approved_tuple_count = cached_bitmap->rids.size();
-				// sel.Initialize(const_cast<uint32_t*>(cached_bitmap->rids.data())); // This is super fast but wrong...
-				sel.Initialize(approved_tuple_count);
-				memcpy(sel.data(),
-					   cached_bitmap->rids.data(),
-					   approved_tuple_count * sizeof(sel_t));
-				DumpSelVector(sel, approved_tuple_count, "After bitmap pruning");
-
-				if (approved_tuple_count == 0) {
-					/* no surviving rows – skip the vector altogether */
-					result.Reset();
-					for (idx_t i = 0; i < column_ids.size(); i++) {
-						auto &col_idx = column_ids[i];
-						if (col_idx.IsRowIdColumn()) {
-							continue;
-						}
-						GetColumn(col_idx).Skip(state.column_scans[i]);
+			std::shared_ptr<Bitmap> cached_bitmap = nullptr;
+			if (has_filters) {
+				auto &table_filters = filter_info.GetFilterList();
+				std::string table_name = GetTableInfo().GetTableName(); // FIXME !!!
+				std::string filters_fingerprint = get_filters_fingerprint(table_filters);
+				cached_bitmap = transaction.transaction->transaction_manager.predicateCache.Get(
+					table_name, filters_fingerprint, this->start + current_row
+				);
+	
+				DumpSelVector(sel, count, "Before bitmap pruning");
+				DumpSelVector(sel, approved_tuple_count, "Before bitmap pruning (approved count)");
+				if (cached_bitmap) {
+					// std::cout << "CACHE HIT for table << " << table_name
+					// 		  << " with fingerprint " << filters_fingerprint << std::endl;
+					approved_tuple_count = cached_bitmap->rids.size();
+					if (approved_tuple_count == 0) {
+						std::cout << "Empty bitmap for table " << GetTableInfo().GetTableName() << std::endl;
 					}
-					state.vector_index++;
-					continue;
+					// sel.Initialize(const_cast<uint32_t*>(cached_bitmap->rids.data())); // This is super fast but wrong...
+					sel.Initialize(approved_tuple_count);
+					memcpy(sel.data(),
+						   cached_bitmap->rids.data(),
+						   approved_tuple_count * sizeof(sel_t));
+					DumpSelVector(sel, approved_tuple_count, "After bitmap pruning");
+	
+					if (approved_tuple_count == 0) {
+						/* no surviving rows – skip the vector altogether */
+						result.Reset();
+						for (idx_t i = 0; i < column_ids.size(); i++) {
+							auto &col_idx = column_ids[i];
+							if (col_idx.IsRowIdColumn()) {
+								continue;
+							}
+							GetColumn(col_idx).Skip(state.column_scans[i]);
+						}
+						state.vector_index++;
+						continue;
+					}
 				}
 			}
 
@@ -685,7 +693,7 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 						auto result_data = FlatVector::GetData<int64_t>(result_vector);
 						for (size_t sel_idx = 0; sel_idx < approved_tuple_count; sel_idx++) {
 							result_data[sel.get_index(sel_idx)] =
-							    UnsafeNumericCast<int64_t>(this->start + current_row + sel.get_index(sel_idx));
+								UnsafeNumericCast<int64_t>(this->start + current_row + sel.get_index(sel_idx));
 						}
 
 						// Was this filter always true? If so, we dont need to apply it
@@ -697,12 +705,12 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 						UnifiedVectorFormat vdata;
 						result_vector.ToUnifiedFormat(approved_tuple_count, vdata);
 						ColumnSegment::FilterSelection(sel, result_vector, vdata, filter.filter, approved_tuple_count,
-						                               approved_tuple_count);
+														approved_tuple_count);
 
 					} else {
 						auto &col_data = GetColumn(filter.table_column_index);
 						col_data.Filter(transaction, state.vector_index, state.column_scans[scan_idx], result_vector,
-						                sel, approved_tuple_count, filter.filter);
+										sel, approved_tuple_count, filter.filter);
 					}
 				}
 				for (auto &table_filter : filter_list) {
@@ -720,7 +728,10 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				transaction.transaction->transaction_manager.predicateCache.Add(
 					table_name, filters_fingerprint, this->start + current_row, bitmap
 				);
+				// std::cout << "Inserted bitmap for " << table_name << " with fingerprint "
+				// 		   << filters_fingerprint << std::endl;
 			}
+
 			if (approved_tuple_count == 0) {
 				// all rows were filtered out by the table filters
 				D_ASSERT(has_filters);
