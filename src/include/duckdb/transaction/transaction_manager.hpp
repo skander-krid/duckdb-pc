@@ -39,7 +39,6 @@ public:
 private:
 	struct CacheKeyHash {
 		std::size_t operator()(const CacheKey& k) const noexcept {
-			// Basic 64-bit hash combine
 			std::size_t h1 = std::hash<std::string>{}(k.first);
 			std::size_t h2 = std::hash<std::string>{}(k.second);
 			return h1 ^ (h2 << 1);
@@ -52,20 +51,15 @@ private:
 						CacheKeyHash>;
 
 public:
-    /// Access the single global instance.
     static PredicateCache& Instance() {
-        // Constructed on the first call; guaranteed thread-safe since C++11.
 		static PredicateCache cache_instance;
         return cache_instance;
     }
 
-    // Non-copyable / non-movable: prevents additional instances.
     PredicateCache(const PredicateCache&)            = delete;
     PredicateCache& operator=(const PredicateCache&) = delete;
     PredicateCache(PredicateCache&&)                 = delete;
     PredicateCache& operator=(PredicateCache&&)      = delete;
-
-    /*--------------------------------- API ---------------------------------*/
 
     // Mark the chunk at 'offset' as prunable for (table, filter).
     void Add(const CacheKey& key, Offset offset) {
@@ -76,7 +70,6 @@ public:
 			vec.resize(offset + 1, 0);
 		}
 
-		// std::cout << "Vec size: " << vec.size() << ", offset: " << offset << std::endl;
         vec[offset] = 1;
     }
 

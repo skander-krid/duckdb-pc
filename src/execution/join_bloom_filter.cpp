@@ -87,7 +87,6 @@ inline size_t JoinBloomFilter::HashToIndex(hash_t hash, size_t i) const {
 
 JoinBloomFilter::JoinBloomFilter(size_t expected_cardinality, double desired_false_positive_rate, vector<column_t> column_ids, std::string fingerprint) 
 : column_ids(std::move(column_ids)), fingerprint(std::move(fingerprint)) {
-    // std::cout << "Initializing bloom filter object" << std::endl;
 	bloom_filter_size = ComputeBloomFilterSize(expected_cardinality, desired_false_positive_rate);
     num_hash_functions = ComputeNumHashFunctions(expected_cardinality, bloom_filter_size);
 
@@ -268,7 +267,6 @@ bool JoinBloomFilter::ShouldDiscardAfterBuild() const {
 }
 
 bool JoinBloomFilter::ShouldStopProbing() const {
-    // std::cout << "Should we stop probing????" << std::endl;
     return num_probed_keys > PROBE_MIN_KEYS_BEFORE_THRESHOLD && GetObservedSelectivity() < PROBE_SELECTIVITY_THRESHOLD;
 }
 

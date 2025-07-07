@@ -761,7 +761,6 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				if (approved_tuple_count == 0) {
 					std::string filters_fingerprint = get_filters_fingerprint(filter_list, bloom_filter_list);
 					std::string table_name = GetTableInfo().GetTableName(); // FIXME
-					// std::cout << "Inserted for table: " << table_name <<  " at index " << this->start + current_row << std::endl;
 					PredicateCache::Instance().Add(
 					    std::make_pair("", filters_fingerprint), (this->start + current_row) >> 11);
 				}
